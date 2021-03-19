@@ -1,4 +1,5 @@
 import numpy as np
+from utils_SL_geo import isect_line_plane_v3
 
 def get_corners_of_bb3d(basis, coeffs, centroid):
     '''
@@ -22,3 +23,4 @@ def get_corners_of_bb3d(basis, coeffs, centroid):
     corners[7, :] = + basis[0, :] * coeffs[0] - basis[1, :] * coeffs[1] - basis[2, :] * coeffs[2]
     corners = corners + np.tile(centroid, (8, 1))
     return corners
+

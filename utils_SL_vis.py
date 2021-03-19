@@ -53,7 +53,7 @@ def vis_axis_xyz(ax, x, y, z, origin=[0., 0., 0.], suffix='_w', color='k', make_
        ([origin[0], (origin+y)[0]], [origin[1], (origin+y)[1]], [origin[2], (origin+y)[2]]), \
           ([origin[0], (origin+z)[0]], [origin[1], (origin+z)[1]], [origin[2], (origin+z)[2]])], [r'$X%s$'%suffix, r'$Y%s$'%suffix, r'$Z%s$'%suffix], [origin+x, origin+y, origin+z])):
         a = Arrow3D(vec[0], vec[1], vec[2], mutation_scale=20,
-                lw=2 if axis_idx in make_bold else 1, arrowstyle="->", color='r' if axis_idx in make_bold else color)
+                lw=2 if axis_idx in make_bold else 1, arrowstyle="->", color='m' if axis_idx in make_bold else color)
         ax.text3D(tag_loc[0], tag_loc[1], tag_loc[2], tag, color=color)
         ax.add_artist(a)
 
@@ -81,3 +81,27 @@ def _set_axes_radius(ax, origin, radius):
     ax.set_xlim3d([x - radius, x + radius])
     ax.set_ylim3d([y - radius, y + radius])
     ax.set_zlim3d([z - radius, z + radius])
+
+import colorsys
+
+def _get_colors(num_colors):
+    colors=[]
+    for i in np.arange(0., 360., 360. / num_colors):
+        hue = i/360.
+        lightness = (50 + np.random.rand() * 10)/100.
+        saturation = (90 + np.random.rand() * 10)/100.
+        colors.append(colorsys.hls_to_rgb(hue, lightness, saturation))
+    return colors
+
+def vis_index_map(index_map):
+    """
+    input: [H, W], np.uint8, with indexs from [0, 1, 2, 3, ...] where 0 is no object
+    return: [H, W], np.float32, RGB ~ [0., 1.]
+    """
+    num_colors = np.unique(index_map).shape[0]
+    colors = _get_colors(num_colors)
+    index_map_vis = np.zeros((index_map.shape[0], index_map.shape[1], 3))
+    for color_idx, color in enumerate(colors):
+        mask = index_map == color_idx
+        index_map_vis[mask] = color
+    return index_map_vis
