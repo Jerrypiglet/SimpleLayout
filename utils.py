@@ -9,7 +9,7 @@ class SimpleScene():
     def __init__(self, cam_dict):
         self.cam_params = self.form_camera(cam_dict)
         self.K = self.cam_params['K']
-        self.T = np.array([[0., 0., 1.], [0., -1., 0.], [1., 0., 0.]]) # cam coords -> project cam coords
+        self.T = np.array([[0., 0., 1.], [0., -1., 0.], [1., 0., 0.]]) # cam coords -> project cam coords; https://i.imgur.com/n8cpHe7.png
         self.H, self.W = cam_dict['height'], cam_dict['width']
         self.bbox = None
         self.xyz_min = np.zeros(3,) + np.inf
@@ -91,16 +91,19 @@ class SimpleScene():
 
         return ax_3d
 
-    def vis_2d_bbox_proj(self, bbox, if_show=True):
+    def vis_2d_bbox_proj_simple(self, bbox, if_show=True, if_vertex_idx_text=True):
+        '''
+        Projecting all vertices including those behind the camera; will cause artifacts: wrong locations of projected edges and edges behind the camera
+        '''
         bbox_proj, bbox_invalid_ids = self.transform_and_proj(bbox)
         fig = plt.figure()
-        for idx, idx_list in enumerate([[0, 1, 2, 3, 0], [4, 5, 6, 7, 4], [0, 4], [1, 5], [2, 6], [3, 7]]):
-            for i in range(len(idx_list)-1):
-                x1 = bbox_proj[idx_list[i]]
-                x2 = bbox_proj[idx_list[i+1]]
+        for edge_idx, edge in enumerate([[0, 1], [1, 2], [2, 3], [3, 0], [4, 5], [5, 6], [6, 7], [7, 4], [0, 4], [1, 5], [2, 6], [3, 7]]): 
+                x1 = bbox_proj[edge[0]]
+                x2 = bbox_proj[edge[1]]
                 plt.plot([x1[0], x2[0]], [x1[1], x2[1]], color='k', linewidth=2, linestyle='--')
-        for idx, x2d in enumerate(bbox_proj):
-            plt.text(x2d[0], x2d[1], str(idx))
+        if if_vertex_idx_text:
+            for idx, x2d in enumerate(bbox_proj):
+                plt.text(x2d[0]+10, x2d[1]+10, str(idx))
         plt.xlim([0., self.W-1])
         plt.ylim([self.H-1, 0])
         if if_show:

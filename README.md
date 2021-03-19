@@ -1,5 +1,5 @@
 # SimpleLayout
-simple layout composer and visualizer in 3D and rendered/reprojected space.
+Simple layout (room as a cuboid + camera) composer and visualizer in both 3D and screen space, with projection and differentiable depth rendering.
 
 ## Installation
 ### matplotlib with widget support
