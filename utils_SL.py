@@ -10,14 +10,17 @@ import time
 
 class SimpleScene():
 
-    def __init__(self, cam_dict):
+    def __init__(self, cam_dict, bbox):
         self.cam_params = self.form_camera(cam_dict)
         self.K = self.cam_params['K']
         self.T = np.array([[0., 0., 1.], [0., -1., 0.], [1., 0., 0.]]) # cam coords -> project cam coords; https://i.imgur.com/n8cpHe7.png
         self.H, self.W = cam_dict['height'], cam_dict['width']
-        self.bbox = None
+        self.bbox = bbox
+        
         self.xyz_min = np.zeros(3,) + np.inf
         self.xyz_max = np.zeros(3,) - np.inf
+        self.bbox_c = self.transform(self.bbox) # in camera coords
+        self.bbox_c_T = (self.T @ (self.bbox_c.T)).T # in projection coords
 
         self.edge_list = [[0, 1], [1, 2], [2, 3], [3, 0], [4, 5], [5, 6], [6, 7], [7, 4], [0, 4], [1, 5], [2, 6], [3, 7]]
         self.face_list = [[1, 0, 2, 3], [4, 5, 7, 6], [0, 1, 4, 5], [1, 5, 2, 6], [3, 2, 7, 6], [4, 0, 7, 3]]
@@ -64,9 +67,10 @@ class SimpleScene():
         f_x = width / (2 * np.tan(fov_x/2.))
         f_y = height / (2 * np.tan(fov_y/2.))
 
-        K = np.array([[f_x, 0., width/2.-1.], [0., f_y, height/2.-1.], [0., 0., 1.]])
+        K = np.array([[f_x, 0., (width-1)/2.], [0., f_y, (height-1)/2.], [0., 0., 1.]])
 
         cam_params = {'K': K, 'R': R, 'origin': origin, 'cam_axes': cam_axes, 'toward': toward, 'up': up, 'right': right}
+        cam_params.update({'f_x': f_x, 'f_y': f_y, 'u0': (width-1)/2., 'v0': (height-1)/2.})
         return cam_params
 
     def transform(self, x):
@@ -81,6 +85,39 @@ class SimpleScene():
         x_c_proj = x_c_proj[:, :2] / (x_c_proj[:, 2:3]+1e-6)
         front_flags = (x_c_T[:, 2]>0).tolist()
         return x_c_proj, front_flags
+
+    def param_planes(self):
+        plane_params = [[] for i in range(6)]
+        uu, vv = np.meshgrid(range(self.W), range(self.H))
+        invd_list = []
+
+        for face_idx in range(6):
+            # face_vertices = bbox[self.face_list[face_idx]]
+
+            # https://kitchingroup.cheme.cmu.edu/blog/2015/01/18/Equation-of-a-plane-through-three-points/
+            p1 = self.bbox_c_T[self.face_list[face_idx][0]]
+            p2 = self.bbox_c_T[self.face_list[face_idx][1]]
+            p3 = self.bbox_c_T[self.face_list[face_idx][2]]
+            # These two vectors are in the plane
+            v1 = p3 - p1
+            v2 = p2 - p1
+            # the cross product is a vector normal to the plane
+            cp = np.cross(v1, v2)
+            a, b, c = cp
+            # This evaluates a * x3 + b * y3 + c * z3 which equals d
+            d = np.dot(cp, p3)
+
+            # print(face_idx, self.face_list[face_idx][:3],p1, p2, p3)
+            # print('The equation is {0}x + {1}y + {2}z = {3}'.format(a, b, c, d))
+            plane_params[face_idx] = [a, b, c, d]
+
+            # Zhang et al. - 2020 - GeoLayout Geometry Driven Room Layout Estimation, Sec. 3.1
+            p = -a / (self.cam_params['f_x'] * d)
+            q = -b / (self.cam_params['f_y'] * d)
+            r = 1/d * (a/self.cam_params['f_x']*self.cam_params['u0'] + b/self.cam_params['f_y']*self.cam_params['v0'] - c)
+            invd = - (p * uu + q * vv + r)
+            invd_list.append(invd)
+        return invd_list
         
     def vis_3d(self, bbox):
         fig = plt.figure(figsize=(5, 5))
@@ -140,6 +177,7 @@ class SimpleScene():
     def poly_to_masks(self, face_verts_list):
         mask_list = []
         mask_combined = np.zeros((self.H, self.W), np.uint8) + 6 # 6 for no faces, 0..5 for faces 0..5
+        mask_conflict = np.zeros((self.H, self.W), np.uint8)
         for face_idx, face_verts in enumerate(face_verts_list):
             if len(face_verts)==0:
                 continue
@@ -147,19 +185,21 @@ class SimpleScene():
             face_verts_proj_reindex = ConvexHull(face_verts_proj[0]).vertices
             face_verts_proj_convex = face_verts_proj[0][face_verts_proj_reindex]
 
-            # tic = time.time()
+            # reduce poly to screen space to speed up rasterization
             p1 = Polygon([x.tolist() for x in face_verts_proj_convex])
             p2 = Polygon([(0, 0), (self.W-1, 0.), (self.W-1,self.H-1), (0, self.H-1)])
             face_poly = p1.intersection(p2)
-            # print(time.time() - tic)
+            
             if face_poly.is_empty:
                 continue
             mask = mask_for_polygons([face_poly], (self.H, self.W))
             mask = mask == 1
+            mask_conflict = np.logical_or(mask_conflict, np.logical_and(mask_combined!=6, mask))
+            mask = np.logical_and(mask, np.logical_not(mask_conflict))
             mask_combined[mask] = face_idx
             mask_list.append((face_idx, mask))
 
-        return mask_combined, mask_list
+        return mask_combined, [[x[0], np.logical_and(np.logical_not(mask_conflict), x[1])] for x in mask_list], mask_conflict
     
     def vis_mask_combined(self, mask_combined, ax_2d=None):
         # print(ax_2d)

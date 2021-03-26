@@ -90,18 +90,21 @@ def _get_colors(num_colors):
         hue = i/360.
         lightness = (50 + np.random.rand() * 10)/100.
         saturation = (90 + np.random.rand() * 10)/100.
-        colors.append(colorsys.hls_to_rgb(hue, lightness, saturation))
+        rgb = colorsys.hls_to_rgb(hue, lightness, saturation)
+        colors.append(rgb)
+        # print(i, hue, lightness, saturation, rgb)
     return colors
 
 def vis_index_map(index_map):
     """
-    input: [H, W], np.uint8, with indexs from [0, 1, 2, 3, ...] where 0 is no object
+    input: [H, W], np.uint8, with indexs from [0, 1, 2, 3, ...]
     return: [H, W], np.float32, RGB ~ [0., 1.]
     """
-    num_colors = np.unique(index_map).shape[0]
+    unique_values = np.unique(index_map)
+    num_colors = np.amax(unique_values).item() + 1
     colors = _get_colors(num_colors)
     index_map_vis = np.zeros((index_map.shape[0], index_map.shape[1], 3))
-    for color_idx, color in enumerate(colors):
-        mask = index_map == color_idx
-        index_map_vis[mask] = color
+    for unique_value in unique_values:
+        mask = index_map == unique_value
+        index_map_vis[mask] = colors[unique_value]
     return index_map_vis
