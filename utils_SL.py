@@ -59,13 +59,16 @@ class SimpleScene():
             R = cam_axes.T  # columns respectively corresponds to toward, up, right vectors.
             t = origin
 
-        fov_x = cam_dict['fov_x'] / 180. * np.pi
-        fov_y = cam_dict['fov_y'] / 180. * np.pi
         width = cam_dict['width']
         height = cam_dict['height']
-
-        f_x = width / (2 * np.tan(fov_x/2.))
-        f_y = height / (2 * np.tan(fov_y/2.))
+        if 'fov_x' in cam_dict and 'fov_y' in cam_dict:
+            fov_x = cam_dict['fov_x'] / 180. * np.pi
+            fov_y = cam_dict['fov_y'] / 180. * np.pi
+            f_x = width / (2 * np.tan(fov_x/2.))
+            f_y = height / (2 * np.tan(fov_y/2.))
+        else:
+            assert 'f_x' in cam_dict and 'f_y' in cam_dict
+            f_x, f_y = cam_dict['f_x'], cam_dict['f_y']
 
         K = np.array([[f_x, 0., (width-1)/2.], [0., f_y, (height-1)/2.], [0., 0., 1.]])
 
