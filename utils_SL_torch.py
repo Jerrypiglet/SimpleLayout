@@ -6,15 +6,17 @@ from utils_SL_vis import vis_cube_plt, set_axes_equal, vis_axis, vis_axis_xyz, v
 from utils_SL_geo import get_front_3d_line, mask_for_polygons
 from scipy.spatial import ConvexHull
 from shapely.geometry import Polygon
+import torch
 import time
 
-class SimpleScene():
+class SimpleSceneTorch():
 
     def __init__(self, cam_dict, bbox):
+        self.device = bbox.device        
         self.cam_params = self.form_camera(cam_dict)
         self.K = self.cam_params['K']
-        self.T = np.array([[0., 0., 1.], [0., -1., 0.], [1., 0., 0.]]) # cam coords -> project cam coords; https://i.imgur.com/n8cpHe7.png
-        self.H, self.W = cam_dict['height'], cam_dict['width']
+        self.T = torch.tensor([[0., 0., 1.], [0., -1., 0.], [1., 0., 0.]]).to(self.device) # cam coords -> project cam coords; https://i.imgur.com/n8cpHe7.png
+        self.H, self.W = cam_dict['height'], cam_dict['width']  
         self.bbox = bbox
         
         self.xyz_min = np.zeros(3,) + np.inf
@@ -42,20 +44,20 @@ class SimpleScene():
         if cam_dict['cam_axes'] is None:
             lookat_pnt = cam_dict['lookat'].reshape((3,1))
             toward = cam_dict['toward'].reshape((3,1))  # x-axis
-            toward /= np.linalg.norm(toward)
+            toward /= torch.linalg.norm(toward)
             up = cam_dict[6:9]  # y-axis
-            up /= np.linalg.norm(up)
-            right = np.cross(toward, up)  # z-axis
-            right /= np.linalg.norm(right)
+            up /= torch.linalg.norm(up)
+            right = torch.cross(toward, up)  # z-axis
+            right /= torch.linalg.norm(right)
         else:
-            toward, up, right = np.split(cam_dict['cam_axes'].T, 3, 1) # x_cam, y_cam, z_cam
-            toward = toward / np.linalg.norm(toward)
-            up = up / np.linalg.norm(up)
-            right = right / np.linalg.norm(right)
-            assert abs(np.dot(toward.flatten(), up.flatten())) < 1e-5
-            assert abs(np.dot(toward.flatten(), right.flatten())) < 1e-5
-            assert abs(np.dot(right.flatten(), up.flatten())) < 1e-5
-            cam_axes = np.hstack([toward, up, right]).T
+            (toward, up, right) = torch.split(cam_dict['cam_axes'].T, 1, dim=1) # x_cam, y_cam, z_cam
+            toward = toward / torch.linalg.norm(toward)
+            up = up / torch.linalg.norm(up)
+            right = right / torch.linalg.norm(right)
+            assert abs(torch.dot(toward.flatten(), up.flatten())) < 1e-5
+            assert abs(torch.dot(toward.flatten(), right.flatten())) < 1e-5
+            assert abs(torch.dot(right.flatten(), up.flatten())) < 1e-5
+            cam_axes = torch.hstack([toward, up, right]).T
             R = cam_axes.T  # columns respectively corresponds to toward, up, right vectors.
             t = origin
 
@@ -64,13 +66,13 @@ class SimpleScene():
         if 'fov_x' in cam_dict and 'fov_y' in cam_dict:
             fov_x = cam_dict['fov_x'] / 180. * np.pi
             fov_y = cam_dict['fov_y'] / 180. * np.pi
-            f_x = width / (2 * np.tan(fov_x/2.))
-            f_y = height / (2 * np.tan(fov_y/2.))
+            f_x = width / (2 * torch.tan(fov_x/2.))
+            f_y = height / (2 * torch.tan(fov_y/2.))
         else:
             assert 'f_x' in cam_dict and 'f_y' in cam_dict
             f_x, f_y = cam_dict['f_x'], cam_dict['f_y']
 
-        K = np.array([[f_x, 0., (width-1)/2.], [0., f_y, (height-1)/2.], [0., 0., 1.]])
+        K = torch.tensor([[f_x, 0., (width-1)/2.], [0., f_y, (height-1)/2.], [0., 0., 1.]]).to(self.device)
 
         cam_params = {'K': K, 'R': R, 'origin': origin, 'cam_axes': cam_axes, 'toward': toward, 'up': up, 'right': right}
         cam_params.update({'f_x': f_x, 'f_y': f_y, 'u0': (width-1)/2., 'v0': (height-1)/2.})
@@ -91,7 +93,8 @@ class SimpleScene():
 
     def param_planes(self):
         plane_params = [[] for i in range(6)]
-        uu, vv = np.meshgrid(range(self.W), range(self.H))
+        vv, uu = torch.meshgrid(torch.arange(self.H), torch.arange(self.W))
+        uu, vv = uu.to(self.device), vv.to(self.device)
         invd_list = []
 
         for face_idx in range(6):
@@ -105,10 +108,10 @@ class SimpleScene():
             v1 = p3 - p1
             v2 = p2 - p1
             # the cross product is a vector normal to the plane
-            cp = np.cross(v1, v2)
+            cp = torch.cross(v1, v2)
             a, b, c = cp
             # This evaluates a * x3 + b * y3 + c * z3 which equals d
-            d = np.dot(cp, p3)
+            d = torch.dot(cp, p3)
 
             # print(face_idx, self.face_list[face_idx][:3],p1, p2, p3)
             # print('The equation is {0}x + {1}y + {2}z = {3}'.format(a, b, c, d))
@@ -153,7 +156,7 @@ class SimpleScene():
             edge_idxes_list = self.edge_list
             verts = bbox
         else:
-            verts = np.vstack(edge_list)
+            verts = torch.vstack(edge_list)
             num_edges = len(edge_list)
             edge_idxes_list = [x.tolist() for x in np.split(np.arange(num_edges*2), num_edges)]
             if_vertex_idx_text = False
@@ -179,13 +182,14 @@ class SimpleScene():
 
     def poly_to_masks(self, face_verts_list):
         mask_list = []
-        mask_combined = np.zeros((self.H, self.W), np.uint8) + 6 # 6 for no faces, 0..5 for faces 0..5
+        mask_combined = torch.zeros(self.H, self.W, dtype=torch.long) + 6 # 6 for no faces, 0..5 for faces 0..5
         mask_conflict = np.zeros((self.H, self.W), np.bool)
+
         for face_idx, face_verts in enumerate(face_verts_list):
             if len(face_verts)==0:
                 continue
             face_verts_proj = self.transform_and_proj(face_verts)
-            face_verts_proj_reindex = ConvexHull(face_verts_proj[0]).vertices
+            face_verts_proj_reindex = ConvexHull(face_verts_proj[0].cpu().numpy()).vertices
             face_verts_proj_convex = face_verts_proj[0][face_verts_proj_reindex]
 
             # reduce poly to screen space to speed up rasterization
@@ -197,7 +201,7 @@ class SimpleScene():
                 continue
             mask = mask_for_polygons([face_poly], (self.H, self.W))
             mask = mask == 1
-            mask_conflict = np.logical_or(mask_conflict, np.logical_and(mask_combined!=6, mask))
+            mask_conflict = np.logical_or(mask_conflict, np.logical_and((mask_combined!=6).cpu().numpy(), mask))
             mask = np.logical_and(mask, np.logical_not(mask_conflict))
             mask_combined[mask] = face_idx
             mask_list.append((face_idx, mask))
@@ -212,23 +216,21 @@ class SimpleScene():
         return ax_2d
 
 
-    def get_edges_front(self, bbox, ax_3d=None, if_vis=False):
-        if if_vis:
-            assert ax_3d is not None
+    def get_edges_front(self, ax_3d=None, if_vis=False):
         edges_front_list = []
         face_edges_list = [[] for i in range(6)]
         face_verts_list = [[] for i in range(6)]
         for edge_idx, (edge, edge_face) in enumerate(zip(self.edge_list, self.edge_face_list)):
-            x1x2 = bbox[edge]
+            x1x2 = self.bbox[edge]
             _, front_flags = self.transform_and_proj(x1x2)
-            x1x2_front, if_new_tuple = get_front_3d_line(x1x2, front_flags, self.cam_params['origin'], self.cam_params['toward']*0.01)
+            x1x2_front, if_new_tuple = get_front_3d_line(x1x2, front_flags, self.cam_params['origin'], self.cam_params['toward']*0.01, if_torch=True)
             if x1x2_front is not None:
                 # print('----', edge, x1x2, x1x2_front)
                 edges_front_list.append((x1x2_front, if_new_tuple))
                 edge_face_face_idxes = edge_face[1]
                 for face_idx in edge_face_face_idxes:
                     face_edges_list[face_idx].append((x1x2_front, if_new_tuple))
-        edges_front = np.stack([x[0] for x in edges_front_list])
+        edges_front = torch.stack([x[0] for x in edges_front_list])
 
         if if_vis:
             for edge_front in edges_front:
@@ -238,14 +240,14 @@ class SimpleScene():
         for face_idx, face_edges in enumerate(face_edges_list):
             if len(face_edges)==0:
                 continue
-            all_verts = np.vstack([x[0] for x in face_edges])
-            face_verts_list[face_idx] = np.unique(all_verts, axis=0)
+            all_verts = torch.vstack([x[0] for x in face_edges])
+            face_verts_list[face_idx] = torch.unique(all_verts.detach(), dim=0)
 
             if if_vis:
-                all_verts_if_new = np.stack([x[1] for x in face_edges]).flatten()
+                all_verts_if_new = torch.stack([x[1] for x in face_edges]).flatten()
                 new_edge = all_verts[all_verts_if_new]
                 if new_edge.shape[0]!=0:
-                    new_edge = np.unique(new_edge, axis=0)
+                    new_edge = torch.unique(new_edge.detach(), dim=0)
                     assert new_edge.shape==(2, 3)
                     new_edge_list.append(new_edge)
                     ax_3d.plot3D(new_edge[:, 0], new_edge[:, 1], new_edge[:, 2], color='m', linestyle='--', linewidth=3)
