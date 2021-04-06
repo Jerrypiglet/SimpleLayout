@@ -41,8 +41,8 @@ class Arrow3D(FancyArrowPatch):
         self.set_positions((xs[0], ys[0]), (xs[1], ys[1]))
         FancyArrowPatch.draw(self, renderer)
         
-def vis_axis(ax, make_bold=[]):
-    for axis_idx, (vec, tag, tag_loc) in enumerate(zip([([0, 1], [0, 0], [0, 0]), ([0, 0], [0, 1], [0, 0]), ([0, 0], [0, 0], [0, 1])], [r'$X_w$', r'$Y_w$', r'$Z_w$'], [[1, 0, 0], [0, 1, 0], [0, 0, 1]])):
+def vis_axis(ax, make_bold=[], tags=[r'$X_w$', r'$Y_w$', r'$Z_w$']):
+    for axis_idx, (vec, tag, tag_loc) in enumerate(zip([([0, 1], [0, 0], [0, 0]), ([0, 0], [0, 1], [0, 0]), ([0, 0], [0, 0], [0, 1])], tags, [[1, 0, 0], [0, 1, 0], [0, 0, 1]])):
         a = Arrow3D(vec[0], vec[1], vec[2], mutation_scale=20,
                 lw=2 if axis_idx in make_bold else 1, arrowstyle="->", color='r' if axis_idx in make_bold else 'k')
         ax.text3D(tag_loc[0], tag_loc[1], tag_loc[2], tag)
@@ -74,6 +74,7 @@ def set_axes_equal(ax: plt.Axes, limits=None):
         ])
     origin = np.mean(limits, axis=1)
     radius = 0.5 * np.max(np.abs(limits[:, 1] - limits[:, 0]))
+    # print(limits, origin, radius)
     _set_axes_radius(ax, origin, radius)
 
 def _set_axes_radius(ax, origin, radius):

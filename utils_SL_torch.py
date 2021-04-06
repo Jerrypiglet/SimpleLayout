@@ -122,6 +122,7 @@ class SimpleSceneTorch():
             q = -b / (self.cam_params['f_y'] * d)
             r = 1/d * (a/self.cam_params['f_x']*self.cam_params['u0'] + b/self.cam_params['f_y']*self.cam_params['v0'] - c)
             invd = - (p * uu + q * vv + r)
+                # print('>>>>>>>>', torch.sum(torch.isnan(invd)))
             invd_list.append(invd)
         return invd_list
         
